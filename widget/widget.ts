@@ -15,16 +15,40 @@ interface Snapshot {
 }
 
 const root = document.querySelector<HTMLElement>('#app')!;
-const app = new App({ name: 'EarthPulse Dashboard', version: '0.1.0' }, {});
+// ChatGPT hosts the dashboard inside a sandboxed iframe. Keep the bridge small
+// and handle every view error locally so a malformed/partial data point never
+// turns into an "Error loading app" host-level failure.
+const app = new App(
+  { name: 'EarthPulse Dashboard', version: '0.1.0' },
+  {},
+  { autoResize: false },
+);
 
-app.ontoolresult = (result) => {
-  const snapshot = result.structuredContent as unknown as Snapshot | undefined;
-  if (snapshot?.overallRisk) render(snapshot);
-  else root.innerHTML = '<div class="empty">The tool returned no dashboard data.</div>';
-};
-app.ontoolcancelled = () => { root.innerHTML = '<div class="empty">Environmental lookup was cancelled.</div>'; };
+function showWidgetError(prefix: string, error: unknown) {
+  console.error(prefix, error);
+  const message = error instanceof Error ? error.message : String(error);
+  root.className = 'cloudy';
+  root.innerHTML = `<div class="empty">${escapeHtml(prefix)}<br><small>${escapeHtml(message)}</small></div>`;
+}
+
+app.addEventListener('toolresult', (result) => {
+  try {
+    const snapshot = result.structuredContent as unknown as Snapshot | undefined;
+    if (snapshot?.overallRisk) render(snapshot);
+    else root.innerHTML = '<div class="empty">The tool returned no dashboard data.</div>';
+  } catch (error) {
+    showWidgetError('The environmental dashboard could not render.', error);
+  }
+});
+app.addEventListener('toolcancelled', () => {
+  root.innerHTML = '<div class="empty">Environmental lookup was cancelled.</div>';
+});
+
+window.addEventListener('error', (event) => showWidgetError('The environmental dashboard encountered an error.', event.error ?? event.message));
+window.addEventListener('unhandledrejection', (event) => showWidgetError('The environmental dashboard encountered an error.', event.reason));
+
 void app.connect(new PostMessageTransport(window.parent, window.parent)).catch((error) => {
-  root.innerHTML = `<div class="empty">Widget connection failed: ${escapeHtml(error instanceof Error ? error.message : String(error))}</div>`;
+  showWidgetError('Widget connection failed.', error);
 });
 
 function render(snapshot: Snapshot) {
@@ -56,7 +80,7 @@ function markup(snapshot: Snapshot, hours: Hour[], selected: number, sourceCount
     <section class="chart-card">
       <div class="chart-head"><div><div class="section-title">Interactive hourly outlook</div><div class="legend">Tap an hour or a point to update the sky and details</div></div><div class="legend">${hours.length}h forecast</div></div>
       ${temperatureGraph(hours, selected)}
-      <div class="axis"><span>${hours[0] ? formatHour(hours[0].time) : 'Now'}</span><span>${hours.length ? formatHour(hours.at(-1)!.time) : '—'}</span></div>
+      <div class="axis"><span>${hours[0] ? formatHour(hours[0].time) : 'Now'}</span><span>${hours.length ? formatHour(hours[hours.length - 1]!.time) : '—'}</span></div>
       <div class="forecast-scroll"><div class="hour-strip">${hourCards(hours, selected)}</div></div>
     </section>
     <section class="lower">
@@ -94,9 +118,12 @@ function bindForecast(snapshot: Snapshot, hours: Hour[], initial: number) {
     root.className = skyClass(hour.weatherCode);
     const detail = root.querySelector<HTMLElement>('#selected-time');
     if (detail) { detail.classList.add('show'); detail.textContent = `${formatHour(hour.time)} · ${conditionLabel(hour.weatherCode)} · ${value(hour.temperatureC)}° · ${value(hour.precipitationProbability)}% rain chance`; }
-    root.querySelector<HTMLElement>('.temperature')!.innerHTML = `${value(hour.temperatureC)}<span>°</span>`;
-    root.querySelector<HTMLElement>('.condition')!.textContent = conditionLabel(hour.weatherCode);
-    root.querySelector<HTMLElement>('.subline')!.textContent = `Feels like ${value(hour.apparentTemperatureC)}° · Wind ${value(hour.windSpeedKmh)} km/h`;
+    const temperature = root.querySelector<HTMLElement>('.temperature');
+    const condition = root.querySelector<HTMLElement>('.condition');
+    const subline = root.querySelector<HTMLElement>('.subline');
+    if (temperature) temperature.innerHTML = `${value(hour.temperatureC)}<span>°</span>`;
+    if (condition) condition.textContent = conditionLabel(hour.weatherCode);
+    if (subline) subline.textContent = `Feels like ${value(hour.apparentTemperatureC)}° · Wind ${value(hour.windSpeedKmh)} km/h`;
   };
   root.querySelectorAll<HTMLElement>('[data-index]').forEach((element) => element.addEventListener('click', () => select(Number(element.dataset.index))));
   select(initial);
@@ -117,8 +144,16 @@ function conditionLabel(code: number | null | undefined): string { if (code == n
 function weatherEmoji(code: number | null | undefined): string { if (code == null) return '·'; if (code >= 95) return '⛈'; if (code >= 61) return '🌧'; if (code >= 51) return '🌦'; if (code >= 45) return '🌫'; if (code >= 3) return '☁'; if (code >= 2) return '⛅'; return '☀'; }
 function weatherEmojiForEvent(type: string): string { return type === 'wildfire' ? '🔥' : type === 'earthquake' ? '◉' : type === 'storm' ? '🌀' : type === 'flood' ? '🌊' : '◌'; }
 function riskColor(severity: string): string { return severity === 'critical' ? '#ff6378' : severity === 'high' ? '#ff875c' : severity === 'moderate' ? '#ffcf67' : '#4be3a4'; }
-function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
-function formatHour(value: string): string { const date = new Date(value.endsWith('Z') ? value : `${value}Z`); return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')} ${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
+}
+function formatHour(value: string): string {
+  const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
+}
 function formatCoordinates(location: Snapshot['location']): string { return `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`; }
 function isCurrentHour(value: string): boolean { const hour = new Date(value.endsWith('Z') ? value : `${value}Z`); return Math.abs(hour.getTime() - Date.now()) < 3_600_000; }
 function escapeHtml(value: string): string { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!); }
