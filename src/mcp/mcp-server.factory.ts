@@ -150,6 +150,9 @@ function toolResult(text: string, value: object) {
   return {
     content: [{ type: 'text' as const, text }],
     structuredContent: value as Record<string, unknown>,
+    // Athena/Skybridge uses result-level metadata to decide whether this
+    // particular successful invocation should mount the output template.
+    _meta: { 'openai/outputTemplate': WIDGET_URI },
   };
 }
 
