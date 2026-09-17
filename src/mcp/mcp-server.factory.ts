@@ -1,7 +1,6 @@
 /// <reference path="../node-runtime.d.ts" />
 
 import { Injectable } from '@nestjs/common';
-import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -30,8 +29,7 @@ export class McpServerFactory {
       },
     );
 
-    registerAppTool(
-      server,
+    server.registerTool(
       'get_environment_snapshot',
       {
         title: 'Environmental snapshot',
@@ -44,7 +42,6 @@ export class McpServerFactory {
         }),
         annotations: { readOnlyHint: true, openWorldHint: true },
         _meta: {
-          ui: { resourceUri: WIDGET_URI, visibility: ['model', 'app'] },
           'openai/outputTemplate': WIDGET_URI,
           'openai/toolInvocation/invoking': 'Building environmental dashboard…',
           'openai/toolInvocation/invoked': 'Environmental dashboard ready',
@@ -125,21 +122,21 @@ export class McpServerFactory {
       },
     );
 
-    registerAppResource(
-      server,
+    server.registerResource(
       'EarthPulse environmental dashboard',
       WIDGET_URI,
       {
         description: 'Interactive environmental risk dashboard for EarthPulse snapshots.',
-        _meta: { ui: { prefersBorder: true }, 'openai/widgetPrefersBorder': true },
+        mimeType: SKYBRIDGE_MIME_TYPE,
+        _meta: { 'openai/widgetPrefersBorder': true },
       },
-      async () => ({
+      async (uri) => ({
         contents: [
           {
-            uri: WIDGET_URI,
+            uri: uri.href,
             mimeType: SKYBRIDGE_MIME_TYPE,
             text: loadWidgetHtml(),
-            _meta: { ui: { prefersBorder: true }, 'openai/widgetPrefersBorder': true },
+            _meta: { 'openai/widgetPrefersBorder': true },
           },
         ],
       }),
