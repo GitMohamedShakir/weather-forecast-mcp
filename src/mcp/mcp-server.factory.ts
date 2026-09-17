@@ -1,3 +1,5 @@
+/// <reference path="../node-runtime.d.ts" />
+
 import { Injectable } from '@nestjs/common';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';

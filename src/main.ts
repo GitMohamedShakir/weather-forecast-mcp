@@ -1,3 +1,5 @@
+/// <reference path="./node-runtime.d.ts" />
+
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { createMcpHandler } from '@modelcontextprotocol/server';
