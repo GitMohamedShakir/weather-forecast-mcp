@@ -1,7 +1,7 @@
 /// <reference path="../node-runtime.d.ts" />
 
 import { Injectable } from '@nestjs/common';
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
+import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -10,6 +10,7 @@ import { EnvironmentService } from '../environment/environment.service.js';
 import type { EnvironmentSnapshot } from '../environment/environment.types.js';
 
 const WIDGET_URI = 'ui://earthpulse/environment-dashboard.html';
+const SKYBRIDGE_MIME_TYPE = 'text/html+skybridge';
 const locationSchema = {
   latitude: z.number().min(-90).max(90).describe('Latitude in decimal degrees.'),
   longitude: z.number().min(-180).max(180).describe('Longitude in decimal degrees.'),
@@ -42,7 +43,12 @@ export class McpServerFactory {
           forecastHours: z.number().int().min(6).max(72).default(24).describe('Hourly weather forecast horizon.'),
         }),
         annotations: { readOnlyHint: true, openWorldHint: true },
-        _meta: { ui: { resourceUri: WIDGET_URI, visibility: ['model', 'app'] } },
+        _meta: {
+          ui: { resourceUri: WIDGET_URI, visibility: ['model', 'app'] },
+          'openai/outputTemplate': WIDGET_URI,
+          'openai/toolInvocation/invoking': 'Building environmental dashboard…',
+          'openai/toolInvocation/invoked': 'Environmental dashboard ready',
+        },
       },
       async ({ latitude, longitude, radiusKm, forecastHours }) => {
         try {
@@ -125,15 +131,15 @@ export class McpServerFactory {
       WIDGET_URI,
       {
         description: 'Interactive environmental risk dashboard for EarthPulse snapshots.',
-        _meta: { ui: { prefersBorder: true } },
+        _meta: { ui: { prefersBorder: true }, 'openai/widgetPrefersBorder': true },
       },
       async () => ({
         contents: [
           {
             uri: WIDGET_URI,
-            mimeType: RESOURCE_MIME_TYPE,
+            mimeType: SKYBRIDGE_MIME_TYPE,
             text: loadWidgetHtml(),
-            _meta: { ui: { prefersBorder: true } },
+            _meta: { ui: { prefersBorder: true }, 'openai/widgetPrefersBorder': true },
           },
         ],
       }),

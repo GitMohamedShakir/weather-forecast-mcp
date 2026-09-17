@@ -1,5 +1,3 @@
-import { App, PostMessageTransport } from '@modelcontextprotocol/ext-apps';
-
 interface Hour { time: string; temperatureC: number | null; apparentTemperatureC: number | null; precipitationMm: number | null; precipitationProbability: number | null; windSpeedKmh: number | null; weatherCode: number | null }
 interface Snapshot {
   location: { latitude: number; longitude: number };
@@ -15,14 +13,18 @@ interface Snapshot {
 }
 
 const root = document.querySelector<HTMLElement>('#app')!;
-// ChatGPT hosts the dashboard inside a sandboxed iframe. Keep the bridge small
-// and handle every view error locally so a malformed/partial data point never
-// turns into an "Error loading app" host-level failure.
-const app = new App(
-  { name: 'EarthPulse Dashboard', version: '0.1.0' },
-  {},
-  { autoResize: false },
-);
+type ChatGptBridge = {
+  toolOutput?: unknown;
+  callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+};
+
+function getToolOutput(): Snapshot | undefined {
+  try {
+    return (window as Window & { openai?: ChatGptBridge }).openai?.toolOutput as Snapshot | undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function showWidgetError(prefix: string, error: unknown) {
   console.error(prefix, error);
@@ -31,25 +33,18 @@ function showWidgetError(prefix: string, error: unknown) {
   root.innerHTML = `<div class="empty">${escapeHtml(prefix)}<br><small>${escapeHtml(message)}</small></div>`;
 }
 
-app.addEventListener('toolresult', (result) => {
+function renderToolOutput() {
   try {
-    const snapshot = result.structuredContent as unknown as Snapshot | undefined;
+    const snapshot = getToolOutput();
     if (snapshot?.overallRisk) render(snapshot);
     else root.innerHTML = '<div class="empty">The tool returned no dashboard data.</div>';
   } catch (error) {
     showWidgetError('The environmental dashboard could not render.', error);
   }
-});
-app.addEventListener('toolcancelled', () => {
-  root.innerHTML = '<div class="empty">Environmental lookup was cancelled.</div>';
-});
+}
 
 window.addEventListener('error', (event) => showWidgetError('The environmental dashboard encountered an error.', event.error ?? event.message));
 window.addEventListener('unhandledrejection', (event) => showWidgetError('The environmental dashboard encountered an error.', event.reason));
-
-void app.connect(new PostMessageTransport(window.parent, window.parent)).catch((error) => {
-  showWidgetError('Widget connection failed.', error);
-});
 
 function render(snapshot: Snapshot) {
   const weather = snapshot.weather;
@@ -157,3 +152,9 @@ function formatHour(value: string): string {
 function formatCoordinates(location: Snapshot['location']): string { return `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`; }
 function isCurrentHour(value: string): boolean { const hour = new Date(value.endsWith('Z') ? value : `${value}Z`); return Math.abs(hour.getTime() - Date.now()) < 3_600_000; }
 function escapeHtml(value: string): string { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!); }
+
+// Skybridge makes the most recent structured tool output available through
+// window.openai and notifies the widget after every tool invocation.
+renderToolOutput();
+window.addEventListener('openai:set_globals', renderToolOutput);
+window.addEventListener('openai:tool_output', renderToolOutput);
