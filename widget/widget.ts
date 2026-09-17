@@ -62,6 +62,7 @@ function markup(snapshot: Snapshot, hours: Hour[], selected: number, sourceCount
   return `
     <div class="ambient"><div class="orb"></div><div class="cloud one"></div><div class="cloud two"></div><div class="rain"></div></div>
     <div class="top"><div class="brand">EARTH<b>PULSE</b></div><div class="stamp">Live environmental intelligence · ${formatTime(snapshot.generatedAt)}</div></div>
+    <section class="decision"><div><strong>${outdoorDecision(snapshot)}</strong><span>${escapeHtml(snapshot.risks[0]?.recommendation ?? snapshot.overallRisk.summary)}</span></div><div class="controls"><button class="control active" data-dashboard-action="now">Now</button><button class="control" data-dashboard-action="later">Next 3 hours</button><button class="control" data-dashboard-action="tips">Safety details</button></div></section>
     <section class="hero">
       <article class="now"><div class="eyebrow">Now · ${formatCoordinates(snapshot.location)}</div><div class="temperature">${value(weather?.temperatureC)}<span>°</span></div><div class="condition">${conditionLabel(weather?.weatherCode)}</div><div class="subline">Feels like ${value(weather?.apparentTemperatureC)}° · Wind ${value(weather?.windSpeedKmh)} km/h</div><div class="selected-time" id="selected-time">Select an hour to explore the forecast</div></article>
       <article class="score"><div class="eyebrow">Environmental risk</div><div class="dial" style="--score:${snapshot.overallRisk.score};--risk:${overallColor}"><strong>${snapshot.overallRisk.score}</strong><small>OUT OF 100</small></div><div class="risk-copy"><strong style="color:${overallColor}">${escapeHtml(snapshot.overallRisk.severity)} risk</strong><span>${escapeHtml(snapshot.overallRisk.summary)}</span></div></article>
@@ -121,6 +122,13 @@ function bindForecast(snapshot: Snapshot, hours: Hour[], initial: number) {
     if (subline) subline.textContent = `Feels like ${value(hour.apparentTemperatureC)}° · Wind ${value(hour.windSpeedKmh)} km/h`;
   };
   root.querySelectorAll<HTMLElement>('[data-index]').forEach((element) => element.addEventListener('click', () => select(Number(element.dataset.index))));
+  root.querySelectorAll<HTMLElement>('[data-dashboard-action]').forEach((button) => button.addEventListener('click', () => {
+    const action = button.dataset.dashboardAction;
+    root.querySelectorAll<HTMLElement>('[data-dashboard-action]').forEach((item) => item.classList.toggle('active', item === button));
+    if (action === 'now') select(initial);
+    if (action === 'later') select(Math.min(hours.length - 1, initial + 3));
+    if (action === 'tips') root.querySelector<HTMLElement>('.insights')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
   select(initial);
   void snapshot;
 }
@@ -139,6 +147,7 @@ function conditionLabel(code: number | null | undefined): string { if (code == n
 function weatherEmoji(code: number | null | undefined): string { if (code == null) return '·'; if (code >= 95) return '⛈'; if (code >= 61) return '🌧'; if (code >= 51) return '🌦'; if (code >= 45) return '🌫'; if (code >= 3) return '☁'; if (code >= 2) return '⛅'; return '☀'; }
 function weatherEmojiForEvent(type: string): string { return type === 'wildfire' ? '🔥' : type === 'earthquake' ? '◉' : type === 'storm' ? '🌀' : type === 'flood' ? '🌊' : '◌'; }
 function riskColor(severity: string): string { return severity === 'critical' ? '#ff6378' : severity === 'high' ? '#ff875c' : severity === 'moderate' ? '#ffcf67' : '#4be3a4'; }
+function outdoorDecision(snapshot: Snapshot): string { const severity = snapshot.overallRisk.severity; return severity === 'critical' || severity === 'high' ? 'Avoid strenuous outdoor activity' : severity === 'moderate' ? 'Outdoor activity: use caution' : 'Outdoor activity looks suitable'; }
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
